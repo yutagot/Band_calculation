@@ -3,4 +3,4 @@
 
 I cannot be held responsible in any way for any losses that may occur as a result of the use of these materials. 
 
-
+Updates with additional functions will be disclosed soon...
