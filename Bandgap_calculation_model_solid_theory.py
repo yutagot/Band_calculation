@@ -96,7 +96,7 @@ def apply_temperature_to_params(
 	return out
 
 
-# %% material parameters
+#%% material parameters
 
 MATERIALS: dict[str, dict[str, float]] = {
 	"Ge": {
@@ -172,7 +172,7 @@ MATERIALS: dict[str, dict[str, float]] = {
 }
 
 
-# %% alloy bowing parameters
+#%% alloy bowing parameters
 #
 # For a binary alloy A_x B_(1-x), a common model is
 #   P(x) = (1-x) P(A) + x P(B) - b * x (1-x)
@@ -189,7 +189,7 @@ BOWING_PARAMETERS: dict[tuple[str, str], dict[str, float]] = {
 }
 
 
-# %% band calculation
+#%% band calculation
 
 
 def _binary_alloy_composition(A: str, B: str, x_B: float) -> dict[str, float]:
@@ -204,14 +204,14 @@ def _default_alloy_name(A: str, B: str) -> str:
 	return f"{A}{B}"
 
 substrate_name = "Ge"
-substrate_composition: dict[str, float] | None = {"Ge": 0.7, "Sn": 0.3}
+substrate_composition: dict[str, float] | None = None
 
 # If you want an alloy substrate, set endpoints + x_B instead of manually writing a dict.
 # Example: Ge(1-x)Sn(x) substrate with x=0.10
 #   substrate_alloy_endpoints = ("Ge", "Sn")
 #   substrate_alloy_x_B = 0.10
-substrate_alloy_endpoints: tuple[str, str] | None = ("Ge", "Sn")
-substrate_alloy_x_B: float | None = 0.3
+substrate_alloy_endpoints: tuple[str, str] | None = None
+substrate_alloy_x_B: float | None = None
 
 # Any alloy can be represented by a composition dict (linear interpolation assumed)
 thin_film_name = "GeSn"
@@ -225,7 +225,7 @@ temperature_K: float = 300.0
 reference_temperature_K: float = 0
 
 # If True, sweep binary alloy composition and summarize bandgaps.
-do_composition_sweep: bool = False
+do_composition_sweep: bool = True
 
 # Sweep settings (binary alloy A(1-x)B(x))
 sweep_alloy_name: str = "GeSn"  # label used in print/plot
@@ -235,7 +235,7 @@ sweep_x_max: float = 0.30
 sweep_points: int = 31
 sweep_plot: bool = True
 
-# If True, save the composition sweep plot to a PNG.
+# If True, save the composition sweep plot to a PDF.
 sweep_save_plot: bool = True
 # Optional explicit save path for the sweep plot. If None and sweep_save_plot=True,
 # a default name is generated next to this script.
@@ -448,12 +448,9 @@ def sweep_binary_alloy_bandgaps(
 	Eg_dir_plot = [r[2] for r in rows]
 	ax.plot(xs_plot, Eg_ind_plot, label="Eg_ind (L)", color=nn_blue)
 	ax.plot(xs_plot, Eg_dir_plot, label="Eg_dir (Γ)", color=violet)
+	ax.tick_params(which="both", direction="in", top=True, right=True)
 	ax.set_xlabel(f"x in {A}(1-x){B}(x)")
 	ax.set_ylabel("Bandgap (eV)")
-	if include_strain and strain_available:
-		ax.set_title(f"Bandgaps vs composition (strained on {substrate}): {name}")
-	else:
-		ax.set_title(f"Bandgaps vs composition: {name}")
 	ax.grid(True, alpha=0.25)
 
 	# Annotate crossover composition on the plot
@@ -988,7 +985,7 @@ def main() -> None:
 					f"{sweep_alloy_name}_{strain_tag}_{A}1m{B}x_T{temperature_K:.0f}K_"
 					f"x{sweep_x_min:.3f}-{sweep_x_max:.3f}_n{sweep_points}"
 				)
-				save_path = Path(__file__).with_name(f"bandgaps_vs_composition_{_sanitize_filename_component(tag)}.png")
+				save_path = Path(__file__).with_name(f"bandgaps_vs_composition_{_sanitize_filename_component(tag)}.pdf")
 		sweep_binary_alloy_bandgaps(
 			A,
 			B,
@@ -1123,7 +1120,7 @@ def main() -> None:
 		include_strain=include_strain_band_shifts,
 		strained_valence_band=strained_valence_band,
 		save_path=Path(__file__).with_name(
-			f"band_alignment_{strain_tag}_{band_edge_kind}_{_sanitize_filename_component(sub_label)}_{_sanitize_filename_component(film_label)}.png"
+			f"band_alignment_{strain_tag}_{band_edge_kind}_{_sanitize_filename_component(sub_label)}_{_sanitize_filename_component(film_label)}.pdf"
 		),
 		show=True,
 	)
