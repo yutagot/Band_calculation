@@ -235,6 +235,10 @@ sweep_x_max: float = 0.30
 sweep_points: int = 31
 sweep_plot: bool = True
 
+# Add a vertical marker line on the sweep plot at a specific composition.
+# Set to None to disable. Unit is percent (e.g. 8.0 -> x=0.08).
+sweep_mark_x_percent: float | None = 8.0
+
 # If True, save the composition sweep plot to a PDF.
 sweep_save_plot: bool = True
 # Optional explicit save path for the sweep plot. If None and sweep_save_plot=True,
@@ -338,6 +342,7 @@ def sweep_binary_alloy_bandgaps(
 	x_max: float,
 	points: int,
 	plot: bool,
+	mark_x: float | None = None,
 	include_strain: bool = False,
 	substrate: str | None = None,
 	substrate_composition: dict[str, float] | None = None,
@@ -452,6 +457,43 @@ def sweep_binary_alloy_bandgaps(
 	ax.set_xlabel(f"x in {A}(1-x){B}(x)")
 	ax.set_ylabel("Bandgap (eV)")
 	ax.grid(True, alpha=0.25)
+
+	# Optional marker at a specific composition (e.g. x=0.08 = 8%).
+	if mark_x is not None and (x_min <= mark_x <= x_max):
+		def _interp_linear(xs_: list[float], ys_: list[float], x_: float) -> float:
+			if x_ <= xs_[0]:
+				return ys_[0]
+			if x_ >= xs_[-1]:
+				return ys_[-1]
+			for i in range(len(xs_) - 1):
+				x0, x1 = xs_[i], xs_[i + 1]
+				if x0 <= x_ <= x1:
+					t = 0.0 if x1 == x0 else (x_ - x0) / (x1 - x0)
+					return ys_[i] + t * (ys_[i + 1] - ys_[i])
+			return ys_[-1]
+
+		y_ind_m = _interp_linear(xs_plot, Eg_ind_plot, mark_x)
+		y_dir_m = _interp_linear(xs_plot, Eg_dir_plot, mark_x)
+		ax.axvline(mark_x, color="black", linestyle="--", linewidth=1.0, alpha=0.8)
+		ax.plot([mark_x], [y_ind_m], marker="o", color=nn_blue, markersize=4)
+		ax.plot([mark_x], [y_dir_m], marker="o", color=violet, markersize=4)
+		y_all = Eg_ind_plot + Eg_dir_plot
+		y_span = (max(y_all) - min(y_all)) if len(y_all) > 1 else 1.0
+		dx = 0.03 * (x_max - x_min) if (x_max > x_min) else 0.02
+		label = (
+			f"x({B}) = {mark_x:.3f} ({mark_x*100:.1f}%)\n"
+			f"Eg_ind = {y_ind_m:.3f} eV\n"
+			f"Eg_dir = {y_dir_m:.3f} eV"
+		)
+		ax.annotate(
+			label,
+			xy=(mark_x, max(y_ind_m, y_dir_m)),
+			xytext=(min(mark_x + dx, x_max), max(y_ind_m, y_dir_m) + 0.08 * y_span),
+			textcoords="data",
+			ha="left",
+			va="bottom",
+			arrowprops={"arrowstyle": "-", "color": "black", "alpha": 0.6},
+		)
 
 	# Annotate crossover composition on the plot
 	if (x_cross is not None) and (y_cross is not None):
@@ -975,6 +1017,9 @@ def _sanitize_filename_component(text: str) -> str:
 def main() -> None:
 	if do_composition_sweep:
 		A, B = sweep_endpoints
+		mark_x: float | None = None
+		if sweep_mark_x_percent is not None:
+			mark_x = sweep_mark_x_percent / 100.0
 		save_path: Path | None = None
 		if sweep_plot and sweep_save_plot:
 			if sweep_plot_save_path is not None:
@@ -994,6 +1039,7 @@ def main() -> None:
 			x_max=sweep_x_max,
 			points=sweep_points,
 			plot=sweep_plot,
+ 			mark_x=mark_x,
 			include_strain=include_strain_band_shifts,
 			substrate=substrate_name,
 			substrate_composition=substrate_composition,
