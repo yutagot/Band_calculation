@@ -15,10 +15,47 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import matplotlib.pyplot as plt
+
+
+def _save_figure(
+	fig: "plt.Figure",
+	out_path: str | Path,
+	*,
+	also_save_svg: bool = True,
+	dpi: int = 200,
+) -> list[Path]:
+	"""Save a Matplotlib figure.
+
+	Behavior
+	--------
+	- Always saves to `out_path`.
+	- If `out_path` ends with `.pdf` and `also_save_svg=True`, also saves a sibling `.svg`.
+	"""
+	path = Path(out_path)
+	path.parent.mkdir(parents=True, exist_ok=True)
+
+	saved: list[Path] = []
+	fig.savefig(path, dpi=dpi)
+	saved.append(path)
+
+	if also_save_svg and path.suffix.lower() == ".pdf":
+		svg_path = path.with_suffix(".svg")
+		fig.savefig(svg_path)
+		saved.append(svg_path)
+
+	return saved
 
 #%% plot color
 nn_blue = (19/255, 173/255, 181/255)
 violet = (212/255, 0/255, 85/255)
+
+#%% font settings for plots
+plt.rcParams['font.sans-serif'] = ['Arial']  # Arial for common text
+plt.rcParams['mathtext.fontset'] = 'custom'  
+plt.rcParams['mathtext.rm'] = 'Arial'        # Arial for tex mode
+plt.rcParams['mathtext.it'] = 'Arial:italic' # Arial for tex mode
+plt.rcParams['mathtext.bf'] = 'Arial:bold'   # Arial for tex mode
 
 def _linspace(a: float, b: float, n: int) -> list[float]:
 	if n < 2:
@@ -204,28 +241,27 @@ def _default_alloy_name(A: str, B: str) -> str:
 	return f"{A}{B}"
 
 substrate_name = "Ge"
+# Substrate alloy composition. Leave as None when using the endpoints + x_B helper below.
 substrate_composition: dict[str, float] | None = None
 
 # If you want an alloy substrate, set endpoints + x_B instead of manually writing a dict.
 # Example: Ge(1-x)Sn(x) substrate with x=0.10
-#   substrate_alloy_endpoints = ("Ge", "Sn")
-#   substrate_alloy_x_B = 0.10
 substrate_alloy_endpoints: tuple[str, str] | None = None
 substrate_alloy_x_B: float | None = None
 
 # Any alloy can be represented by a composition dict (linear interpolation assumed)
 thin_film_name = "GeSn"
-thin_film_composition: dict[str, float] | None = {"Ge": 0.8, "Sn": 0.2}
+thin_film_composition: dict[str, float] | None = {"Ge": 0.88, "Sn": 0.12}
 
 # Select which band edge to use for Ec/Eg in offsets & plots: "ind", "dir", or "both"
 band_edge_kind = "both"
 
 # Temperature settings for bandgaps (Varshni). Existing Eg values are treated as valid at T_ref.
-temperature_K: float = 300.0
+temperature_K: float = 10.0
 reference_temperature_K: float = 0
 
 # If True, sweep binary alloy composition and summarize bandgaps.
-do_composition_sweep: bool = True
+do_composition_sweep: bool = False
 
 # Sweep settings (binary alloy A(1-x)B(x))
 sweep_alloy_name: str = "GeSn"  # label used in print/plot
@@ -233,11 +269,16 @@ sweep_endpoints: tuple[str, str] = ("Ge", "Sn")  # (A, B)
 sweep_x_min: float = 0.0
 sweep_x_max: float = 0.30
 sweep_points: int = 31
-sweep_plot: bool = True
+sweep_plot: bool = False
+
+# If True, plot both unstrained and strained curves on the same axes.
+# - Unstrained: bulk alloy bandgaps
+# - Strained: (001) biaxial strain to substrate with deformation-potential shifts
+sweep_compare_strain_states: bool = False
 
 # Add a vertical marker line on the sweep plot at a specific composition.
 # Set to None to disable. Unit is percent (e.g. 8.0 -> x=0.08).
-sweep_mark_x_percent: float | None = 8.0
+sweep_mark_x_percent: float | None = False
 
 # If True, save the composition sweep plot to a PDF.
 sweep_save_plot: bool = True
@@ -247,6 +288,12 @@ sweep_plot_save_path: str | Path | None = None
 
 # If True, include pseudomorphic strain-induced band-edge shifts (requires deformation potentials).
 include_strain_band_shifts = True
+
+# Relaxation degree of the film strain.
+#   0.0: fully pseudomorphic (coherent) film (max biaxial strain)
+#   1.0: fully relaxed film (no biaxial strain)
+# Values between 0 and 1 represent partial relaxation (fraction of mismatch relieved).
+relaxation_degree: float | None = 0.1
 
 # Which valence band defines the VBM under strain: "vbm" (=max(HH,LH)), "hh", or "lh".
 strained_valence_band = "vbm"
@@ -344,6 +391,8 @@ def sweep_binary_alloy_bandgaps(
 	plot: bool,
 	mark_x: float | None = None,
 	include_strain: bool = False,
+	compare_strain_states: bool = False,
+	relaxation_degree: float,
 	substrate: str | None = None,
 	substrate_composition: dict[str, float] | None = None,
 	strained_valence_band: str = "vbm",
@@ -361,16 +410,29 @@ def sweep_binary_alloy_bandgaps(
 
 	xs = _linspace(x_min, x_max, points)
 
-	if include_strain and substrate is None:
-		raise ValueError("substrate must be provided when include_strain=True")
-	if include_strain:
+	do_strained = include_strain or compare_strain_states
+	if do_strained and substrate is None:
+		raise ValueError("substrate must be provided when include_strain=True or compare_strain_states=True")
+	if do_strained:
 		assert substrate is not None
+		if not (0.0 <= relaxation_degree <= 1.0):
+			raise ValueError(
+				f"relaxation_degree must be within [0,1]. Got: {relaxation_degree}"
+			)
 
-	rows: list[tuple[float, float, float, float, str]] = []
-	strain_available = include_strain
+	Eg_ind_un: list[float] = []
+	Eg_dir_un: list[float] = []
+	Eg_ind_st: list[float] = []
+	Eg_dir_st: list[float] = []
+	strain_available = do_strained
 	strain_error: str | None = None
+
 	for x in xs:
 		comp = {A: 1.0 - x, B: x}
+		_, p = get_material(name, composition=comp)
+		Eg_ind_un.append(float(p["Eg_ind"]))
+		Eg_dir_un.append(float(p["Eg_dir"]))
+
 		if strain_available:
 			try:
 				ind = strained_film_band_edges_pseudomorphic_001(
@@ -380,6 +442,7 @@ def sweep_binary_alloy_bandgaps(
 					thin_film_composition=comp,
 					band_edge_kind="ind",
 					valence_band=strained_valence_band,
+					relaxation_degree=relaxation_degree,
 				)
 				dir_ = strained_film_band_edges_pseudomorphic_001(
 					substrate=substrate,
@@ -388,31 +451,43 @@ def sweep_binary_alloy_bandgaps(
 					thin_film_composition=comp,
 					band_edge_kind="dir",
 					valence_band=strained_valence_band,
+					relaxation_degree=relaxation_degree,
 				)
-				Eg_ind = float(ind["Eg_film"])
-				Eg_dir = float(dir_["Eg_film"])
+				Eg_ind_st.append(float(ind["Eg_film"]))
+				Eg_dir_st.append(float(dir_["Eg_film"]))
 			except KeyError as exc:
-				# Deformation potentials missing etc; fall back to unstrained for the rest.
 				strain_available = False
 				strain_error = str(exc)
-				_, p = get_material(name, composition=comp)
-				Eg_ind = float(p["Eg_ind"])
-				Eg_dir = float(p["Eg_dir"])
+				# Fill remainder with unstrained values so plotting stays aligned.
+				Eg_ind_st.append(Eg_ind_un[-1])
+				Eg_dir_st.append(Eg_dir_un[-1])
 		else:
-			_, p = get_material(name, composition=comp)
-			Eg_ind = float(p["Eg_ind"])
-			Eg_dir = float(p["Eg_dir"])
-		delta = Eg_dir - Eg_ind
-		kind = "dir" if Eg_dir < Eg_ind else "ind"
-		rows.append((x, Eg_ind, Eg_dir, delta, kind))
+			# Keep lengths consistent even when strained calculation is unavailable.
+			if do_strained:
+				Eg_ind_st.append(Eg_ind_un[-1])
+				Eg_dir_st.append(Eg_dir_un[-1])
+
+	# Summary rows (for printing) use either strained or unstrained as the primary dataset.
+	rows: list[tuple[float, float, float, float, str]] = []
+	primary_ind = Eg_ind_st if (do_strained and include_strain and strain_available) else Eg_ind_un
+	primary_dir = Eg_dir_st if (do_strained and include_strain and strain_available) else Eg_dir_un
+	for x, ei, ed in zip(xs, primary_ind, primary_dir):
+		delta = ed - ei
+		kind = "dir" if ed < ei else "ind"
+		rows.append((x, float(ei), float(ed), float(delta), kind))
 
 	print(f"\nComposition sweep: {name} = {A}(1-x){B}(x)")
 	print(f"  T={temperature_K:.1f} K (Varshni), T_ref={reference_temperature_K:.1f} K")
-	if include_strain:
+	if do_strained:
 		if strain_available:
-			print(f"  Strain: ON (pseudomorphic (001) on {substrate}, valence={strained_valence_band})")
+			print(
+				f"  Strain curve: ON (001 on {substrate}, valence={strained_valence_band}, "
+				f"relaxation={relaxation_degree:.3f})"
+			)
 		else:
-			print(f"  Strain: requested but unavailable -> OFF (fallback). Reason: {strain_error}")
+			print(f"  Strain curve: requested but unavailable -> OFF (fallback). Reason: {strain_error}")
+	if compare_strain_states:
+		print("  Unstrained curve: ON (bulk alloy bandgaps)")
 	print(f"  x range: {x_min:.4f} .. {x_max:.4f}  (points={points})")
 	print("\n    x(B)     Eg_ind(eV)   Eg_dir(eV)   (Eg_dir-Eg_ind)    min-kind")
 	print("  -------    ---------   ---------   --------------     --------")
@@ -448,15 +523,46 @@ def sweep_binary_alloy_bandgaps(
 		return
 
 	fig, ax = plt.subplots(figsize=(6.2, 4.0))
-	xs_plot = [r[0] for r in rows]
-	Eg_ind_plot = [r[1] for r in rows]
-	Eg_dir_plot = [r[2] for r in rows]
-	ax.plot(xs_plot, Eg_ind_plot, label="Eg_ind (L)", color=nn_blue)
-	ax.plot(xs_plot, Eg_dir_plot, label="Eg_dir (Γ)", color=violet)
+	xs_plot = list(xs)
+
+	# Plot style: color = ind/dir, linestyle = unstrained/strained
+	def _lighten_rgb(rgb: tuple[float, float, float], amount: float) -> tuple[float, float, float]:
+		# amount: 0 -> unchanged, 1 -> white
+		return tuple(min(1.0, max(0.0, c + (1.0 - c) * amount)) for c in rgb)  # type: ignore[return-value]
+
+	unstrained_ind_color = _lighten_rgb(nn_blue, 0.55)
+	unstrained_dir_color = _lighten_rgb(violet, 0.55)
+	ax.plot(
+		xs_plot,
+		Eg_ind_un,
+		label="Eg_ind (L) unstrained",
+		color=unstrained_ind_color,
+		linewidth=2.0,
+		linestyle="--",
+	)
+	ax.plot(
+		xs_plot,
+		Eg_dir_un,
+		label="Eg_dir (Γ) unstrained",
+		color=unstrained_dir_color,
+		linewidth=2.0,
+		linestyle="--",
+	)
+	if do_strained and strain_available:
+		ax.plot(xs_plot, Eg_ind_st, label="Eg_ind (L) strained", color=nn_blue, linewidth=2.0, linestyle="-")
+		ax.plot(xs_plot, Eg_dir_st, label="Eg_dir (Γ) strained", color=violet, linewidth=2.0, linestyle="-")
+	elif do_strained:
+		# Still show a legend entry indicating the requested strained curve fell back.
+		ax.plot(xs_plot, Eg_ind_st, label="Eg_ind (L) strained (fallback)", color=nn_blue, linewidth=1.6, linestyle="-")
+		ax.plot(xs_plot, Eg_dir_st, label="Eg_dir (Γ) strained (fallback)", color=violet, linewidth=1.6, linestyle="-")
 	ax.tick_params(which="both", direction="in", top=True, right=True)
-	ax.set_xlabel(f"x in {A}(1-x){B}(x)")
-	ax.set_ylabel("Bandgap (eV)")
+	ax.xaxis.set_tick_params(direction='in', labelsize = 12, width = 2.0, length = 9.0, pad=7.5)
+	ax.yaxis.set_tick_params(direction='in', labelsize = 12, width = 2.0, length = 9.0)
+	ax.set_xlabel(f"x in {A}(1-x){B}(x)", fontsize=12)
+	ax.set_ylabel("Bandgap (eV)", fontsize=12)
 	ax.grid(True, alpha=0.25)
+	for spine in ax.spines.values():
+		spine.set_linewidth(2.0)
 
 	# Optional marker at a specific composition (e.g. x=0.08 = 8%).
 	if mark_x is not None and (x_min <= mark_x <= x_max):
@@ -472,12 +578,17 @@ def sweep_binary_alloy_bandgaps(
 					return ys_[i] + t * (ys_[i + 1] - ys_[i])
 			return ys_[-1]
 
-		y_ind_m = _interp_linear(xs_plot, Eg_ind_plot, mark_x)
-		y_dir_m = _interp_linear(xs_plot, Eg_dir_plot, mark_x)
+		# Use strained values if available; otherwise unstrained.
+		Eg_ind_for_mark = Eg_ind_st if (do_strained and strain_available) else Eg_ind_un
+		Eg_dir_for_mark = Eg_dir_st if (do_strained and strain_available) else Eg_dir_un
+		y_ind_m = _interp_linear(xs_plot, Eg_ind_for_mark, mark_x)
+		y_dir_m = _interp_linear(xs_plot, Eg_dir_for_mark, mark_x)
 		ax.axvline(mark_x, color="black", linestyle="--", linewidth=1.0, alpha=0.8)
 		ax.plot([mark_x], [y_ind_m], marker="o", color=nn_blue, markersize=4)
 		ax.plot([mark_x], [y_dir_m], marker="o", color=violet, markersize=4)
-		y_all = Eg_ind_plot + Eg_dir_plot
+		y_all = Eg_ind_un + Eg_dir_un
+		if do_strained:
+			y_all = y_all + Eg_ind_st + Eg_dir_st
 		y_span = (max(y_all) - min(y_all)) if len(y_all) > 1 else 1.0
 		dx = 0.03 * (x_max - x_min) if (x_max > x_min) else 0.02
 		label = (
@@ -514,9 +625,10 @@ def sweep_binary_alloy_bandgaps(
 	fig.tight_layout()
 
 	if save_path is not None:
-		out_path = Path(save_path)
-		fig.savefig(out_path, dpi=200)
-		print(f"\nSaved sweep plot: {out_path}")
+		saved = _save_figure(fig, save_path, also_save_svg=True, dpi=200)
+		print("\nSaved sweep plot:")
+		for p in saved:
+			print(f"  {p}")
 
 	if show:
 		plt.show()
@@ -632,18 +744,33 @@ def pseudomorphic_strain(
 	*,
 	substrate_composition: dict[str, float] | None = None,
 	thin_film_composition: dict[str, float] | None = None,
+	relaxation_degree: float = 0.0,
 ) -> dict[str, float]:
 	"""Compute geometric strain components for a cubic film on a cubic substrate.
 
 	This is *only* the strain tensor components (no band-edge shifts).
+
+	Parameters
+	----------
+	relaxation_degree:
+		0.0 for fully pseudomorphic (coherent) film; 1.0 for fully relaxed film.
+		Intermediate values approximate partial relaxation by reducing the in-plane strain:
+		  eps_parallel_effective = (1 - relaxation_degree) * eps_parallel_pseudomorphic
 	"""
+	if not (0.0 <= relaxation_degree <= 1.0):
+		raise ValueError(
+			f"relaxation_degree must be within [0,1]. Got: {relaxation_degree}"
+		)
 	_, sub = get_material(substrate, composition=substrate_composition)
 	_, film = get_material(thin_film, composition=thin_film_composition)
 
-	eps_parallel = (sub["a"] - film["a"]) / film["a"]
+	eps_parallel_pseudo = (sub["a"] - film["a"]) / film["a"]
+	eps_parallel = (1.0 - relaxation_degree) * eps_parallel_pseudo
 	eps_perp = -2.0 * (film["c12"] / film["c11"]) * eps_parallel
 	eps_hydro = 2.0 * eps_parallel + eps_perp
 	return {
+		"relaxation_degree": relaxation_degree,
+		"eps_parallel_pseudomorphic": eps_parallel_pseudo,
 		"eps_parallel": eps_parallel,
 		"eps_perp": eps_perp,
 		"eps_hydro": eps_hydro,
@@ -695,8 +822,9 @@ def strained_film_band_edges_pseudomorphic_001(
 	thin_film_composition: dict[str, float] | None = None,
 	band_edge_kind: str = "ind",
 	valence_band: str = "vbm",
+	relaxation_degree: float = 0.0,
 ) -> dict[str, float]:
-	"""Band edges for a pseudomorphic (001) film including simple deformation-potential shifts.
+	"""Band edges for a (001) film including simple deformation-potential shifts.
 
 	Model
 	-----
@@ -734,6 +862,7 @@ def strained_film_band_edges_pseudomorphic_001(
 		thin_film=thin_film,
 		substrate_composition=substrate_composition,
 		thin_film_composition=thin_film_composition,
+		relaxation_degree=relaxation_degree,
 	)
 
 	_required_any = {
@@ -793,6 +922,7 @@ def strained_film_band_edges_pseudomorphic_001(
 	return {
 		"kind": kind,
 		"valence_band": vb,
+		"relaxation_degree": relaxation_degree,
 		"Ev_sub": Ev_sub,
 		"Ec_sub": Ec_sub,
 		"Eg_sub": Eg_sub,
@@ -805,6 +935,7 @@ def strained_film_band_edges_pseudomorphic_001(
 		"dEv": Ev - Ev_sub,
 		"dEc": Ec - Ec_sub,
 		"dEg": Eg - Eg_sub,
+		"eps_parallel_pseudomorphic": strain["eps_parallel_pseudomorphic"],
 		"eps_parallel": strain["eps_parallel"],
 		"eps_perp": strain["eps_perp"],
 		"eps_hydro": strain["eps_hydro"],
@@ -822,6 +953,7 @@ def plot_band_alignment(
 	band_edge_kind: str = "ind",
 	include_strain: bool = False,
 	strained_valence_band: str = "vbm",
+	relaxation_degree: float = 0.0,
 	plot_hh_lh: bool = True,
 	plot_so: bool = False,
 	save_path: str | Path | None = None,
@@ -870,6 +1002,7 @@ def plot_band_alignment(
 				thin_film_composition=thin_film_composition,
 				band_edge_kind="ind",
 				valence_band=strained_valence_band,
+				relaxation_degree=relaxation_degree,
 			)
 			dir_ = strained_film_band_edges_pseudomorphic_001(
 				substrate=substrate,
@@ -878,6 +1011,7 @@ def plot_band_alignment(
 				thin_film_composition=thin_film_composition,
 				band_edge_kind="dir",
 				valence_band=strained_valence_band,
+				relaxation_degree=relaxation_degree,
 			)
 			# Valence is shared; pick from indirect calculation
 			Ev_film = ind["Ev_film"]
@@ -989,7 +1123,9 @@ def plot_band_alignment(
 	out_path: Path | None = None
 	if save_path is not None:
 		out_path = Path(save_path)
-		fig.savefig(out_path, dpi=200)
+		saved = _save_figure(fig, out_path, also_save_svg=True, dpi=200)
+		# Keep return value as the primary requested path.
+		# (Additional SVG is saved automatically when the primary is a PDF.)
 
 	if show:
 		plt.show()
@@ -1025,12 +1161,24 @@ def main() -> None:
 			if sweep_plot_save_path is not None:
 				save_path = Path(sweep_plot_save_path)
 			else:
-				strain_tag = "strained" if include_strain_band_shifts else "unstrained"
+				if sweep_compare_strain_states:
+					strain_tag = "compare"
+					relax_tag = f"R{relaxation_degree:.3f}"  # strained curve uses this
+				else:
+					strain_tag = "strained" if include_strain_band_shifts else "unstrained"
+					relax_tag = f"R{relaxation_degree:.3f}" if include_strain_band_shifts else ""
 				tag = (
-					f"{sweep_alloy_name}_{strain_tag}_{A}1m{B}x_T{temperature_K:.0f}K_"
+					f"{sweep_alloy_name}_{strain_tag}{relax_tag}_{A}1m{B}x_T{temperature_K:.0f}K_"
 					f"x{sweep_x_min:.3f}-{sweep_x_max:.3f}_n{sweep_points}"
 				)
 				save_path = Path(__file__).with_name(f"bandgaps_vs_composition_{_sanitize_filename_component(tag)}.pdf")
+
+		if sweep_compare_strain_states and include_strain_band_shifts and relaxation_degree >= 0.999:
+			print(
+				"\n[sweep][Warning] relaxation_degree is ~1.0 (fully relaxed). "
+				"The 'strained' curve has ~zero strain and will overlap the unstrained curve. "
+				"Set relaxation_degree closer to 0 for pseudomorphic strain, or an intermediate value for partial relaxation."
+			)
 		sweep_binary_alloy_bandgaps(
 			A,
 			B,
@@ -1041,6 +1189,8 @@ def main() -> None:
 			plot=sweep_plot,
  			mark_x=mark_x,
 			include_strain=include_strain_band_shifts,
+			compare_strain_states=sweep_compare_strain_states,
+			relaxation_degree=relaxation_degree,
 			substrate=substrate_name,
 			substrate_composition=substrate_composition,
 			strained_valence_band=strained_valence_band,
@@ -1061,6 +1211,7 @@ def main() -> None:
 		thin_film=thin_film_name,
 		substrate_composition=substrate_composition,
 		thin_film_composition=thin_film_composition,
+		relaxation_degree=relaxation_degree,
 	)
 	sub_label, _sub = get_material(substrate_name, composition=substrate_composition)
 	film_label, _film = get_material(thin_film_name, composition=thin_film_composition)
@@ -1097,12 +1248,14 @@ def main() -> None:
 		print(f"  ΔEg(dir) = {offsets['dEg_dir']:+.3f} eV")
 
 	print("\nPseudomorphic strain in film (geometry only):")
+	print(f"  relaxation = {relaxation_degree:.3f}  (0=pseudomorphic, 1=relaxed)")
+	print(f"  ε_parallel(pseudo) = {strain['eps_parallel_pseudomorphic']:+.5f}")
 	print(f"  ε_parallel = {strain['eps_parallel']:+.5f}")
 	print(f"  ε_perp     = {strain['eps_perp']:+.5f}")
 	print(f"  ε_hydro    = {strain['eps_hydro']:+.5f}")
 
 	if include_strain_band_shifts:
-		print("\nStrain-induced band-edge shifts (pseudomorphic (001) film):")
+		print("\nStrain-induced band-edge shifts ((001) film, with relaxation):")
 		try:
 			if band_edge_kind.lower().strip() in {"ind", "dir"}:
 				strained = strained_film_band_edges_pseudomorphic_001(
@@ -1112,11 +1265,13 @@ def main() -> None:
 					thin_film_composition=thin_film_composition,
 					band_edge_kind=band_edge_kind,
 					valence_band=strained_valence_band,
+					relaxation_degree=relaxation_degree,
 				)
 				print(f"  kind={strained['kind']}, valence={strained['valence_band']}")
 				print(f"  ΔEv(strain) = {strained['dEv']:+.3f} eV")
 				print(f"  ΔEc(strain) = {strained['dEc']:+.3f} eV")
 				print(f"  ΔEg(strain) = {strained['dEg']:+.3f} eV")
+				print(f"  Eg_film(strain) = {strained['Eg_film']:.3f} eV")
 				print(f"  Film Ev(HH) = {strained['Ev_film_hh']:+.3f} eV")
 				print(f"  Film Ev(LH) = {strained['Ev_film_lh']:+.3f} eV")
 				print(f"  Film Ev(SO) = {strained['Ev_film_so']:+.3f} eV")
@@ -1128,6 +1283,7 @@ def main() -> None:
 					thin_film_composition=thin_film_composition,
 					band_edge_kind="ind",
 					valence_band=strained_valence_band,
+					relaxation_degree=relaxation_degree,
 				)
 				dir_ = strained_film_band_edges_pseudomorphic_001(
 					substrate=substrate_name,
@@ -1136,13 +1292,16 @@ def main() -> None:
 					thin_film_composition=thin_film_composition,
 					band_edge_kind="dir",
 					valence_band=strained_valence_band,
+					relaxation_degree=relaxation_degree,
 				)
 				print(f"  valence={ind['valence_band']}")
 				print(f"  ΔEv(strain)     = {ind['dEv']:+.3f} eV")
 				print(f"  ΔEc_ind(strain) = {ind['dEc']:+.3f} eV")
 				print(f"  ΔEg_ind(strain) = {ind['dEg']:+.3f} eV")
+				print(f"  Eg_ind_film(strain) = {ind['Eg_film']:.3f} eV")
 				print(f"  ΔEc_dir(strain) = {dir_['dEc']:+.3f} eV")
 				print(f"  ΔEg_dir(strain) = {dir_['dEg']:+.3f} eV")
+				print(f"  Eg_dir_film(strain) = {dir_['Eg_film']:.3f} eV")
 				print(f"  Film Ev(HH)     = {ind['Ev_film_hh']:+.3f} eV")
 				print(f"  Film Ev(LH)     = {ind['Ev_film_lh']:+.3f} eV")
 				print(f"  Film Ev(SO)     = {ind['Ev_film_so']:+.3f} eV")
@@ -1157,6 +1316,7 @@ def main() -> None:
 
 	# Plot (and save) band alignment diagram
 	strain_tag = "strained" if include_strain_band_shifts else "unstrained"
+	relax_tag = f"_R{relaxation_degree:.3f}" if include_strain_band_shifts else ""
 	out = plot_band_alignment(
 		substrate=substrate_name,
 		thin_film=thin_film_name,
@@ -1165,13 +1325,16 @@ def main() -> None:
 		band_edge_kind=band_edge_kind,
 		include_strain=include_strain_band_shifts,
 		strained_valence_band=strained_valence_band,
+		relaxation_degree=relaxation_degree,
 		save_path=Path(__file__).with_name(
-			f"band_alignment_{strain_tag}_{band_edge_kind}_{_sanitize_filename_component(sub_label)}_{_sanitize_filename_component(film_label)}.pdf"
+			f"band_alignment_{strain_tag}{relax_tag}_{band_edge_kind}_{_sanitize_filename_component(sub_label)}_{_sanitize_filename_component(film_label)}.pdf"
 		),
 		show=True,
 	)
 	if out is not None:
 		print(f"\nSaved plot: {out}")
+		if out.suffix.lower() == ".pdf":
+			print(f"Saved plot: {out.with_suffix('.svg')}")
 
 
 if __name__ == "__main__":
