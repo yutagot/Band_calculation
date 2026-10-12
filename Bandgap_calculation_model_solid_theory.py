@@ -36,12 +36,12 @@ def _save_figure(
 	path.parent.mkdir(parents=True, exist_ok=True)
 
 	saved: list[Path] = []
-	fig.savefig(path, dpi=dpi)
+	fig.savefig(path, dpi=dpi, transparent=True, bbox_inches="tight")
 	saved.append(path)
 
 	if also_save_svg and path.suffix.lower() == ".pdf":
 		svg_path = path.with_suffix(".svg")
-		fig.savefig(svg_path)
+		fig.savefig(svg_path, transparent=True, bbox_inches="tight")
 		saved.append(svg_path)
 
 	return saved
@@ -137,24 +137,28 @@ def apply_temperature_to_params(
 
 MATERIALS: dict[str, dict[str, float]] = {
 	"Ge": {
-		"a": 5.658,  # lattice parameter (Å)
-		"c11": 1.2853,  # elastic constant (units as given)
-		"c12": 0.4826,
-		"c44": 0.668,
-		"delta0": 0.30,  # spin-orbit splitting (eV)
-		"Ev_av": -6.35,  # average valence band edge relative to vacuum (eV)
-		"Eg_ind": 0.7412,  # band gap used in this model (eV)
-		"Ec_ind": -5.51,  # CBM used in this model relative to vacuum (eV)
-		"Eg_dir": 0.8893,
-		"Ec_dir": -5.36,
+		"a": 5.658,  # lattice parameter (Å), ok
+		"c11": 1.285,  # elastic constant (units as given), ok
+		"c12": 0.483, # ok
+		# "c44": 0.668,
+		"c44": 0.683, # ok
+		# "delta0": 0.30,  # spin-orbit splitting (eV)
+		"delta0": 0.29,  # spin-orbit splitting (eV), ok
+		"Ev_av": -6.35,  # average valence band edge relative to vacuum (eV), ok
+		# "Eg_ind": 0.7412,  # band gap used in this model (eV)
+		"Eg_ind": 0.74,  # band gap used in this model (eV), ok
+		"Ec_ind": -5.51,  # CBM used in this model relative to vacuum (eV), ok
+		# "Eg_dir": 0.8893,
+		"Eg_dir": 0.89, # ok
+		"Ec_dir": -5.36, # ok
 		"bandgap_alpha_gamma": 6.842e-4,
 		"bandgap_beta_gamma": 398,
 		"bandgap_alpha_l": 0.4774e-3,
 		"bandgap_beta_l": 235,
-		"a_v": 1.24,  # valence band deformation potential (eV)
-		"a_c_ind": -1.54,  # conduction band deformation potential (eV)
-		"a_c_dir": -8.24,  # conduction band deformation potential (eV)
-		"b": -2.9,  # valence shear deformation potential (eV)
+		"a_v": 1.24,  # valence band deformation potential (eV), ok
+		"a_c_ind": -1.54,  # conduction band deformation potential (eV), ok
+		"a_c_dir": -8.24,  # conduction band deformation potential (eV), ok
+		"b": -2.9,  # valence shear deformation potential (eV), ok
 	},
 	"Si": {
 		"a": 5.43,
@@ -177,35 +181,63 @@ MATERIALS: dict[str, dict[str, float]] = {
 		"b": -2.1,  # valence shear deformation potential (eV)
 	},
 	"Sn": {
-		"a": 6.489,
-		"c11": 0.69,
-		"c12": 0.293,
-		"c44": 0.362,
-		"delta0": 0.8,
+		"a": 6.489,  # lattice parameter (Å), ok
+		"c11": 0.69,  # elastic constant (units as given), ok
+		"c12": 0.293,  # ok
+		"c44": 0.362,  # ok
+		"delta0": 0.8,  # ok
 		# alpha-Sn reference (from your snippet):
 		#   VBM(Sn) is +0.69 eV above VBM(Ge) [Jaros] (as commented in the database)
 		# In this script, we approximate: VBM ≈ Ev_av + delta0/3.
 		# With Ge: Ev_av=-6.35, delta0=0.30 -> VBM(Ge)=-6.25 eV.
 		# So VBM(Sn)=-6.25+0.69=-5.56 eV and Ev_av(Sn)=VBM(Sn)-delta0/3=-5.8267 eV.
-		"Ev_av": -5.8267,
+		# "Ev_av": -5.8267,
+		"Ev_av": -5.83,  # ok
 		# Indirect edge (L): bandgap = 0.093 eV (room temperature) from your snippet.
 		# Using the same VBM alignment as above:
 		#   VBM(Sn) = -5.56 eV  ->  Ec_ind = VBM + Eg_ind = -5.467 eV.
-		"Eg_ind": 0.093,
-		"Ec_ind": -5.4670,
-		"Eg_dir": -0.413,
+		# "Eg_ind": 0.093,
+		"Eg_ind": 0.09,  # ok
+		# "Ec_ind": -5.4670,
+		"Ec_ind": -5.473,  # ok
+		# "Eg_dir": -0.413,
+		"Eg_dir": -0.41,  # ok
 		# Conduction edge (Gamma, direct) consistent with Eg being defined to VBM:
 		# Ec = VBM + Eg = -5.56 + (-0.413) = -5.973 eV.
-		"Ec_dir": -5.9730,
+		"Ec_dir": -5.9730,  # ok
 		"bandgap_alpha_gamma": 0,
 		"bandgap_beta_gamma": 0,
 		"bandgap_alpha_l": 2.9e-4,
 		"bandgap_beta_l": 0,
-		"a_v": 1.58,  # valence band deformation potential (eV)
-		"a_c_ind": -2.14,  # conduction band deformation potential (eV)
-		"a_c_dir": -6.0,  # conduction band deformation potential (eV)
-		"b": -2.7,  # valence shear deformation potential (eV)
+		"a_v": 1.58,  # valence band deformation potential (eV), ok
+		"a_c_ind": -2.14,  # conduction band deformation potential (eV), ok
+		"a_c_dir": -6.0,  # conduction band deformation potential (eV), ok
+		"b": -2.7,  # valence shear deformation potential (eV), ok
 	},	
+	"Ge_tensile_sub": {
+		"a": 5.664,  # lattice parameter (Å)
+		"c11": 1.285,  # elastic constant (units as given), ok
+		"c12": 0.483, # ok
+		# "c44": 0.668,
+		"c44": 0.683, # ok
+		# "delta0": 0.30,  # spin-orbit splitting (eV)
+		"delta0": 0.29,  # spin-orbit splitting (eV), ok
+		"Ev_av": -6.35,  # average valence band edge relative to vacuum (eV), ok
+		# "Eg_ind": 0.7412,  # band gap used in this model (eV)
+		"Eg_ind": 0.74,  # band gap used in this model (eV), ok
+		"Ec_ind": -5.51,  # CBM used in this model relative to vacuum (eV), ok
+		# "Eg_dir": 0.8893,
+		"Eg_dir": 0.89, # ok
+		"Ec_dir": -5.36, # ok
+		"bandgap_alpha_gamma": 6.842e-4,
+		"bandgap_beta_gamma": 398,
+		"bandgap_alpha_l": 0.4774e-3,
+		"bandgap_beta_l": 235,
+		"a_v": 1.24,  # valence band deformation potential (eV), ok
+		"a_c_ind": -1.54,  # conduction band deformation potential (eV), ok
+		"a_c_dir": -8.24,  # conduction band deformation potential (eV), ok
+		"b": -2.9,  # valence shear deformation potential (eV), ok
+	},
 }
 
 
@@ -222,6 +254,10 @@ BOWING_PARAMETERS: dict[tuple[str, str], dict[str, float]] = {
 	("Ge", "Sn"): {
 		"Eg_dir": 2.46,  # eV (GeSn Γ-gap bowing)
 		"Eg_ind": 0.99,  # optional: set if you have an L-gap bowing value
+		# "Eg_dir": 2.46,  # eV (GeSn Γ-gap bowing)
+		# "Eg_ind": 1.03,  # optional: set if you have an L-gap bowing value
+		# "Eg_dir": 2.61,  # eV (GeSn Γ-gap bowing), at 10K
+		# "Eg_ind": 0.80,  # optional: set if you have an L-gap bowing value, at 10K
 	},
 }
 
@@ -240,7 +276,7 @@ def _default_alloy_name(A: str, B: str) -> str:
 	"""Human-readable alloy label, e.g. GeSn."""
 	return f"{A}{B}"
 
-substrate_name = "Ge"
+substrate_name = "Ge_tensile_sub"
 # Substrate alloy composition. Leave as None when using the endpoints + x_B helper below.
 substrate_composition: dict[str, float] | None = None
 
@@ -251,13 +287,13 @@ substrate_alloy_x_B: float | None = None
 
 # Any alloy can be represented by a composition dict (linear interpolation assumed)
 thin_film_name = "GeSn"
-thin_film_composition: dict[str, float] | None = {"Ge": 0.88, "Sn": 0.12}
+thin_film_composition: dict[str, float] | None = {"Ge": 0.9219, "Sn": 0.0781}
 
 # Select which band edge to use for Ec/Eg in offsets & plots: "ind", "dir", or "both"
 band_edge_kind = "both"
 
 # Temperature settings for bandgaps (Varshni). Existing Eg values are treated as valid at T_ref.
-temperature_K: float = 10.0
+temperature_K: float = 300.0
 reference_temperature_K: float = 0
 
 # If True, sweep binary alloy composition and summarize bandgaps.
@@ -278,23 +314,30 @@ sweep_compare_strain_states: bool = False
 
 # Add a vertical marker line on the sweep plot at a specific composition.
 # Set to None to disable. Unit is percent (e.g. 8.0 -> x=0.08).
-sweep_mark_x_percent: float | None = False
+sweep_mark_x_percent: float | None = None
 
 # If True, save the composition sweep plot to a PDF.
-sweep_save_plot: bool = True
+sweep_save_plot: bool = False
 # Optional explicit save path for the sweep plot. If None and sweep_save_plot=True,
 # a default name is generated next to this script.
-sweep_plot_save_path: str | Path | None = None
+sweep_plot_save_path: str | Path | None = False
 
 # If True, include pseudomorphic strain-induced band-edge shifts (requires deformation potentials).
 include_strain_band_shifts = True
+
+# If True, use the composition-dependent Ge1-ySny deformation-potential model
+# reported by Jiang et al. for strained-band calculations:
+#   a_c_dir(y) = -9.46 + 2.33 y
+#   a_c_ind(y) = -3.60 + 1.77 y
+#   b(y) = -1.88 eV
+# The existing MATERIALS values remain the default when this is False.
+use_paper_deformation_potentials = False	 # doi:10.1088/0268-1242/29/11/115028
 
 # Relaxation degree of the film strain.
 #   0.0: fully pseudomorphic (coherent) film (max biaxial strain)
 #   1.0: fully relaxed film (no biaxial strain)
 # Values between 0 and 1 represent partial relaxation (fraction of mismatch relieved).
-relaxation_degree: float | None = 0.1
-
+relaxation_degree: float | None = 0.573
 # Which valence band defines the VBM under strain: "vbm" (=max(HH,LH)), "hh", or "lh".
 strained_valence_band = "vbm"
 
@@ -530,39 +573,39 @@ def sweep_binary_alloy_bandgaps(
 		# amount: 0 -> unchanged, 1 -> white
 		return tuple(min(1.0, max(0.0, c + (1.0 - c) * amount)) for c in rgb)  # type: ignore[return-value]
 
-	unstrained_ind_color = _lighten_rgb(nn_blue, 0.55)
-	unstrained_dir_color = _lighten_rgb(violet, 0.55)
+	unstrained_ind_color = _lighten_rgb(nn_blue, 0.4)
+	unstrained_dir_color = _lighten_rgb(violet, 0.4)
 	ax.plot(
 		xs_plot,
 		Eg_ind_un,
 		label="Eg_ind (L) unstrained",
 		color=unstrained_ind_color,
-		linewidth=2.0,
-		linestyle="--",
+		linewidth=4.0,
+		linestyle=":",
 	)
 	ax.plot(
 		xs_plot,
 		Eg_dir_un,
 		label="Eg_dir (Γ) unstrained",
 		color=unstrained_dir_color,
-		linewidth=2.0,
-		linestyle="--",
+		linewidth=4.0,
+		linestyle=":",
 	)
 	if do_strained and strain_available:
-		ax.plot(xs_plot, Eg_ind_st, label="Eg_ind (L) strained", color=nn_blue, linewidth=2.0, linestyle="-")
-		ax.plot(xs_plot, Eg_dir_st, label="Eg_dir (Γ) strained", color=violet, linewidth=2.0, linestyle="-")
+		ax.plot(xs_plot, Eg_ind_st, label="Eg_ind (L) strained", color=nn_blue, linewidth=4.0, linestyle="-")
+		ax.plot(xs_plot, Eg_dir_st, label="Eg_dir (Γ) strained", color=violet, linewidth=4.0, linestyle="-")
 	elif do_strained:
 		# Still show a legend entry indicating the requested strained curve fell back.
-		ax.plot(xs_plot, Eg_ind_st, label="Eg_ind (L) strained (fallback)", color=nn_blue, linewidth=1.6, linestyle="-")
-		ax.plot(xs_plot, Eg_dir_st, label="Eg_dir (Γ) strained (fallback)", color=violet, linewidth=1.6, linestyle="-")
-	ax.tick_params(which="both", direction="in", top=True, right=True)
-	ax.xaxis.set_tick_params(direction='in', labelsize = 12, width = 2.0, length = 9.0, pad=7.5)
-	ax.yaxis.set_tick_params(direction='in', labelsize = 12, width = 2.0, length = 9.0)
-	ax.set_xlabel(f"x in {A}(1-x){B}(x)", fontsize=12)
-	ax.set_ylabel("Bandgap (eV)", fontsize=12)
+		# ax.plot(xs_plot, Eg_ind_st, label="Eg_ind (L) strained (fallback)", color=nn_blue, linewidth=1.6, linestyle="-")
+		ax.plot(xs_plot, Eg_dir_st, label="Eg_dir (Γ) strained (fallback)", color=violet, linewidth=4.0, linestyle="-")
+	ax.tick_params(which="both", direction="in")
+	ax.xaxis.set_tick_params(direction='in', labelsize = 16, width = 4.0, length = 9.0, pad=7.5)
+	ax.yaxis.set_tick_params(direction='in', labelsize = 16, width = 4.0, length = 9.0)
+	ax.set_xlabel(f"x in {A}(1-x){B}(x)", fontsize=16)
+	ax.set_ylabel("Bandgap (eV)", fontsize=16)
 	ax.grid(True, alpha=0.25)
 	for spine in ax.spines.values():
-		spine.set_linewidth(2.0)
+		spine.set_linewidth(4.0)
 
 	# Optional marker at a specific composition (e.g. x=0.08 = 8%).
 	if mark_x is not None and (x_min <= mark_x <= x_max):
@@ -583,9 +626,9 @@ def sweep_binary_alloy_bandgaps(
 		Eg_dir_for_mark = Eg_dir_st if (do_strained and strain_available) else Eg_dir_un
 		y_ind_m = _interp_linear(xs_plot, Eg_ind_for_mark, mark_x)
 		y_dir_m = _interp_linear(xs_plot, Eg_dir_for_mark, mark_x)
-		ax.axvline(mark_x, color="black", linestyle="--", linewidth=1.0, alpha=0.8)
-		ax.plot([mark_x], [y_ind_m], marker="o", color=nn_blue, markersize=4)
-		ax.plot([mark_x], [y_dir_m], marker="o", color=violet, markersize=4)
+		# ax.axvline(mark_x, color="black", linestyle="--", linewidth=1.0, alpha=0.8)
+		# ax.plot([mark_x], [y_ind_m], marker="o", color=nn_blue, markersize=4)
+		# ax.plot([mark_x], [y_dir_m], marker="o", color=violet, markersize=4)
 		y_all = Eg_ind_un + Eg_dir_un
 		if do_strained:
 			y_all = y_all + Eg_ind_st + Eg_dir_st
@@ -596,32 +639,31 @@ def sweep_binary_alloy_bandgaps(
 			f"Eg_ind = {y_ind_m:.3f} eV\n"
 			f"Eg_dir = {y_dir_m:.3f} eV"
 		)
-		ax.annotate(
-			label,
-			xy=(mark_x, max(y_ind_m, y_dir_m)),
-			xytext=(min(mark_x + dx, x_max), max(y_ind_m, y_dir_m) + 0.08 * y_span),
-			textcoords="data",
-			ha="left",
-			va="bottom",
-			arrowprops={"arrowstyle": "-", "color": "black", "alpha": 0.6},
-		)
+		# ax.annotate(
+		# 	label,
+		# 	xy=(mark_x, max(y_ind_m, y_dir_m)),
+		# 	xytext=(min(mark_x + dx, x_max), max(y_ind_m, y_dir_m) + 0.08 * y_span),
+		# 	textcoords="data",
+		# 	ha="left",
+		# 	va="bottom",
+		# 	arrowprops={"arrowstyle": "-", "color": "black", "alpha": 0.6},
+		# )
 
-	# Annotate crossover composition on the plot
-	if (x_cross is not None) and (y_cross is not None):
-		ax.axvline(x_cross, color="black", linestyle=":", linewidth=1.2, alpha=0.8)
-		ax.plot([x_cross], [y_cross], marker="o", color="black", markersize=4)
-		x_label = f"x({B}) ≈ {x_cross:.4f} ({x_cross*100:.2f}%)"
-		ax.annotate(
-			x_label,
-			xy=(x_cross, y_cross),
-			xytext=(min(max(x_cross + 0.03, x_min), x_max), y_cross + 0.15),
-			textcoords="data",
-			ha="left",
-			va="bottom",
-			arrowprops={"arrowstyle": "-", "color": "black", "alpha": 0.7},
-		)
+	# # Annotate crossover composition on the plot
+	# if (x_cross is not None) and (y_cross is not None):
+	# 	ax.plot([x_cross], [y_cross], marker="o", color="black", markersize=4)
+	# 	x_label = f"x({B}) ≈ {x_cross:.4f} ({x_cross*100:.2f}%)"
+	# 	ax.annotate(
+	# 		x_label,
+	# 		xy=(x_cross, y_cross),
+	# 		xytext=(min(max(x_cross + 0.03, x_min), x_max), y_cross + 0.15),
+	# 		textcoords="data",
+	# 		ha="left",
+	# 		va="bottom",
+	# 		arrowprops={"arrowstyle": "-", "color": "black", "alpha": 0.7},
+	# 	)
 
-	ax.legend()
+	# ax.legend()
 	fig.tight_layout()
 
 	if save_path is not None:
@@ -814,6 +856,41 @@ def _get_any_key(p: dict[str, float], aliases: tuple[str, ...], *, context: str)
 	)
 
 
+def _ge_sn_paper_deformation_potentials(
+	thin_film: str,
+	thin_film_composition: dict[str, float] | None,
+) -> tuple[float, float, float]:
+	"""Return (b, a_c_ind, a_c_dir) from the optional GeSn model.
+
+	The paper model is defined for Ge_(1-y)Sn_y and uses a constant valence-band
+	shear deformation potential.  The ``a_v`` value is retained from MATERIALS.
+	"""
+	if thin_film_composition is None:
+		if thin_film == "Ge":
+			y_sn = 0.0
+		elif thin_film == "Sn":
+			y_sn = 1.0
+		else:
+			raise ValueError(
+				"The paper GeSn deformation-potential model requires "
+				"thin_film_composition for an alloy."
+			)
+	else:
+		comp = _normalize_composition(thin_film_composition)
+		unknown = set(comp) - {"Ge", "Sn"}
+		if unknown:
+			raise ValueError(
+				"The paper deformation-potential model is defined only for Ge_(1-y)Sn_y. "
+				f"Unsupported composition components: {sorted(unknown)}"
+			)
+		y_sn = comp.get("Sn", 0.0)
+
+	a_c_dir = -9.46 + 2.33 * y_sn
+	a_c_ind = -3.60 + 1.77 * y_sn
+	b = -1.88
+	return b, a_c_ind, a_c_dir
+
+
 def strained_film_band_edges_pseudomorphic_001(
 	substrate: str,
 	thin_film: str,
@@ -837,6 +914,10 @@ def strained_film_band_edges_pseudomorphic_001(
 	  HH is decoupled: Ev(HH) = A + Δ0/3 - Q
 	  LH and SO mix (2×2 diagonalization with coupling √2·Q)
 	- Conduction (simple hydrostatic-only): Ec = Ec0 + a_c * Tr(eps)
+
+	If ``use_paper_deformation_potentials`` is enabled, the Ge_(1-y)Sn_y
+	composition-dependent values are used for ``a_c_ind``, ``a_c_dir``, and
+	``b`` instead of the interpolated MATERIALS values.
 
 	Required film parameters (keys in MATERIALS)
 	-------------------------------------------
@@ -875,8 +956,19 @@ def strained_film_band_edges_pseudomorphic_001(
 
 	Delta0 = film["delta0"]
 	a_v = _get_any_key(film, ("a_v", "av"), context=f"strain band shifts (film={thin_film})")
+	b = _get_any_key(film, ("b",), context=f"strain band shifts (film={thin_film})")
+	a_c_ind = _get_any_key(
+		film, ("a_c_ind", "ac_ind"), context=f"strain band shifts (film={thin_film})"
+	)
+	a_c_dir = _get_any_key(
+		film, ("a_c_dir", "ac_dir"), context=f"strain band shifts (film={thin_film})"
+	)
+	if use_paper_deformation_potentials:
+		b, a_c_ind, a_c_dir = _ge_sn_paper_deformation_potentials(
+			thin_film, thin_film_composition
+		)
 	A = film["Ev_av"] + a_v * strain["eps_hydro"]
-	Q = film["b"] * (strain["eps_perp"] - strain["eps_parallel"])
+	Q = b * (strain["eps_perp"] - strain["eps_parallel"])
 
 	# HH (decoupled)
 	Ev_hh = A + Delta0 / 3.0 - Q
@@ -909,9 +1001,9 @@ def strained_film_band_edges_pseudomorphic_001(
 
 	Ec0 = film[f"Ec_{kind}"]
 	if kind == "ind":
-		a_c = _get_any_key(film, ("a_c_ind", "ac_ind"), context=f"strain band shifts (film={thin_film})")
+		a_c = a_c_ind
 	else:
-		a_c = _get_any_key(film, ("a_c_dir", "ac_dir"), context=f"strain band shifts (film={thin_film})")
+		a_c = a_c_dir
 	Ec = Ec0 + a_c * strain["eps_hydro"]
 
 	Ec_sub = sub[f"Ec_{kind}"]
@@ -1050,7 +1142,7 @@ def plot_band_alignment(
 		ax.hlines(Ev_film_hh, x_if, x_right, linewidth=2.5, color="black")
 		ax.hlines(Ev_film_lh, x_if, x_right, linewidth=2.5, color="black", linestyle="--")
 		if plot_so and (Ev_film_so is not None):
-			ax.hlines(Ev_film_so, x_if, x_right, linewidth=2.0, color="black", linestyle=":")
+			ax.hlines(Ev_film_so, x_if, x_right, linewidth=4.0, color="black", linestyle=":")
 	else:
 		ax.hlines(Ev_film, x_if, x_right, linewidth=3, color="black")
 

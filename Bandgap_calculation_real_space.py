@@ -36,7 +36,7 @@ def _save_figure(
 	path.parent.mkdir(parents=True, exist_ok=True)
 
 	saved: list[Path] = []
-	fig.savefig(path, dpi=dpi)
+	fig.savefig(path, dpi=dpi, transparent=True, bbox_inches="tight")
 	saved.append(path)
 
 	if also_save_svg and path.suffix.lower() == ".pdf":
@@ -344,7 +344,7 @@ profile_band_edge_kind: str = "both"
 
 # Save the real-space plot (PDF + SVG).
 profile_save_plot: bool = True 
-profile_plot_save_path: str | Path | None =  "./plots.pdf"
+profile_plot_save_path: str | Path | None =f"plots_{temperature_K:.0f}K.pdf"
 
 
 # ---- derived configuration (keep user inputs above) ----
@@ -1172,7 +1172,7 @@ def plot_band_alignment(
 	ax.set_xticks([0.25, 0.75], [sub_label, film_label])
 	ax.set_ylabel("Energy (eV, common reference)")
 	plot_kind_title = "ind" if kind == "ind" else "dir" if kind == "dir" else "ind+dir"
-	ax.set_title(f"Band alignment ({plot_kind_title}): {sub_label} / {film_label}")
+	ax.set_title(f"Band alignment ({plot_kind_title}): {sub_label} / {film_label} at T={temperature_K} K")
 	ax.grid(True, axis="y", alpha=0.25)
 	fig.tight_layout()
 
@@ -1462,6 +1462,7 @@ def plot_graded_layer_band_edges_vs_depth(
 	band_edge_kind: str = "both",
 	include_strain: bool = False,
 	relaxation_degree: float = 1.0,
+	temperature_K: float | None = None,
 	save_path: str | Path | None = None,
 	show: bool = True,
 ) -> list[Path] | None:
@@ -1555,9 +1556,10 @@ def plot_graded_layer_band_edges_vs_depth(
 		extra = f", R={relaxation_degree:.3f}"
 	else:
 		extra = ""
-	fig.suptitle(
-		f"Real-space band edges: {substrate_label} / {layer_label} ({strain_tag}{extra})"
-	)
+	title = f"Real-space band edges: {substrate_label} / {layer_label} ({strain_tag}{extra})"
+	if temperature_K is not None:
+		title += f" at T={temperature_K:.1f} K"
+	fig.suptitle(title)
 
 	vb_branch_plot = [v for v in vb_branch_id]
 	cb_branch_plot = [2.0 + v for v in cb_branch_id]
@@ -1594,6 +1596,30 @@ def plot_graded_layer_band_edges_vs_depth(
 		plt.close(fig)
 
 	return saved
+
+
+def _print_quantum_well_transition_energies(data: dict[str, list[float]]) -> None:
+	"""Print representative QW transition energies at the highest-Sn slice."""
+	z_nm = data.get("z_nm", [])
+	x_sn = data.get("x_sn", [])
+	Ev_hh = data.get("Ev_hh", [])
+	Ev_lh = data.get("Ev_lh", [])
+	Ec_ind = data.get("Ec_ind", [])
+	Ec_dir = data.get("Ec_dir", [])
+
+	if not z_nm or not x_sn or not Ev_hh or not Ev_lh or not Ec_ind or not Ec_dir:
+		print("\nQuantum well transition energies: unavailable (missing profile data).")
+		return
+
+	max_x = max(x_sn)
+	idx = next((i for i, x in enumerate(x_sn) if abs(x - max_x) <= 1e-12), 0)
+
+	print("\nQuantum well transition energies (representative well slice):")
+	print(f"  z = {z_nm[idx]:.3f} nm, xSn = {x_sn[idx]:.3f}")
+	print(f"  Gamma-HH = {Ec_dir[idx] - Ev_hh[idx]:+.3f} eV")
+	print(f"  Gamma-LH = {Ec_dir[idx] - Ev_lh[idx]:+.3f} eV")
+	print(f"  L-HH     = {Ec_ind[idx] - Ev_hh[idx]:+.3f} eV")
+	print(f"  L-LH     = {Ec_ind[idx] - Ev_lh[idx]:+.3f} eV")
 
 
 def main() -> None:
@@ -1674,6 +1700,7 @@ def main() -> None:
 				save_path = Path(__file__).with_name(
 					f"band_edges_vs_depth_{_sanitize_filename_component(tag)}.pdf"
 				)
+		_print_quantum_well_transition_energies(data)
 		plot_graded_layer_band_edges_vs_depth(
 			data,
 			substrate_label=sub_label,
@@ -1681,6 +1708,7 @@ def main() -> None:
 			band_edge_kind=profile_band_edge_kind,
 			include_strain=profile_include_strain_band_shifts,
 			relaxation_degree=profile_relaxation_degree,
+			temperature_K=temperature_K,
 			save_path=save_path,
 			show=True,
 		)
